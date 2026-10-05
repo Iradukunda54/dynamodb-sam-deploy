@@ -65,29 +65,42 @@ scripts/verify-table.sh           optional CLI check (put / get / query GSIs / u
 
 Running it once per stage is what gives each environment its own artifact bucket.
 
-Use the exact GitHub owner login (case-sensitive, it is matched in the IAM trust policy). For this repo that is `Iradukunda54`:
+The IAM trust policy must match the GitHub OIDC token's `sub` claim **exactly** (case-sensitive). This repository uses GitHub's *immutable subject* format, which adds the numeric owner and repo IDs:
+
+```
+repo:Iradukunda54@267279209/dynamodb-sam-deploy@1405506764:ref:refs/heads/<branch>
+```
+
+To check the format for a repo, run `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`. If `use_immutable_subject` is `true`, use the `sub_claim_prefix` values as `--github-org` and `--github-repo`, as below. If it is `false`, use the plain `<owner>` and `<repo>`.
 
 ```bash
 # dev stage: trusted only for the "develop" branch
 sam pipeline bootstrap --no-interactive --no-confirm-changeset \
-  --stage dev --region eu-west-1 \
+  --stage dev --region eu-west-1 --cicd-provider github-actions \
   --permissions-provider oidc --oidc-provider github-actions \
   --oidc-provider-url https://token.actions.githubusercontent.com \
   --oidc-client-id sts.amazonaws.com \
-  --github-org Iradukunda54 --github-repo dynamodb-sam-deploy \
+  --github-org Iradukunda54@267279209 --github-repo dynamodb-sam-deploy@1405506764 \
   --deployment-branch develop
 
 # prod stage: trusted only for the "main" branch
 sam pipeline bootstrap --no-interactive --no-confirm-changeset \
-  --stage prod --region eu-west-1 \
+  --stage prod --region eu-west-1 --cicd-provider github-actions \
   --permissions-provider oidc --oidc-provider github-actions \
   --oidc-provider-url https://token.actions.githubusercontent.com \
   --oidc-client-id sts.amazonaws.com \
-  --github-org Iradukunda54 --github-repo dynamodb-sam-deploy \
+  --github-org Iradukunda54@267279209 --github-repo dynamodb-sam-deploy@1405506764 \
   --deployment-branch main
 ```
 
-> If the account already has the GitHub OIDC provider (`token.actions.githubusercontent.com`), the second bootstrap reuses it.
+> If the account already has the GitHub OIDC provider (`token.actions.githubusercontent.com`), bootstrap reuses it (`CreateNewOidcProvider=false`).
+>
+> **SAM CLI gotchas (seen with v1.166):**
+> - Without `--cicd-provider github-actions`, `--no-interactive` fails with `Missing required parameter '--oidc-provider'`.
+> - The first bootstrap saves `deployment_branch` in the `[default]` section of `.aws-sam/pipeline/pipelineconfig.toml`, and later runs use that saved value instead of the CLI flag. Before bootstrapping `prod`, set `deployment_branch = "main"` in that file.
+> - Check each stage afterwards: the `SubjectClaim` parameter of `aws-sam-cli-managed-<stage>-pipeline-resources` must end in `refs/heads/develop` (dev) or `refs/heads/main` (prod).
+
+The resulting stage settings are committed in [.aws-sam/pipeline/pipelineconfig.toml](.aws-sam/pipeline/pipelineconfig.toml).
 
 Each run creates a stack named `aws-sam-cli-managed-<stage>-pipeline-resources`. To read the values you need, run:
 
