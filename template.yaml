@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  DynamoDB "Books" table deployed with AWS SAM. On-Demand billing,
+  Standard-Infrequent-Access table class, and two Global Secondary Indexes.
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - prod
+    Description: Deployment environment (dev or prod).
+
+  ProjectName:
+    Type: String
+    Default: books-catalog
+    AllowedPattern: "^[a-z0-9-]+$"
+    Description: Prefix used when naming resources.
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # AWS::Serverless::SimpleTable cannot define GSIs or a table class,
+  # so the full AWS::DynamoDB::Table resource is used inside the SAM template.
+  BooksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${ProjectName}-${Environment}-books"
+      BillingMode: PAY_PER_REQUEST
+      TableClass: STANDARD_INFREQUENT_ACCESS
+      # Only attributes used in the table key or an index key may be declared here.
+      # Other item attributes (Title, PublishedYear, ...) are schemaless.
+      AttributeDefinitions:
+        - AttributeName: BookId
+          AttributeType: S
+        - AttributeName: Author
+          AttributeType: S
+        - AttributeName: Genre
+          AttributeType: S
+      KeySchema:
+        - AttributeName: BookId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: AuthorIndex
+          KeySchema:
+            - AttributeName: Author
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GenreIndex
+          KeySchema:
+            - AttributeName: Genre
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: aws-sam
+
+Outputs:
+  TableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref BooksTable
+  TableArn:
+    Description: ARN of the DynamoDB table
+    Value: !GetAtt BooksTable.Arn
+  AuthorIndexName:
+    Description: GSI for querying books by author
+    Value: AuthorIndex
+  GenreIndexName:
+    Description: GSI for querying books by genre
+    Value: GenreIndex

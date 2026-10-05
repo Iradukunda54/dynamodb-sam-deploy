@@ -1,0 +1,7 @@
+.aws-sam/*
+!.aws-sam/pipeline/
+samconfig.local.toml
+*.pyc
+.DS_Store
+.idea/
+.vscode/

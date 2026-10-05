@@ -1,0 +1,74 @@
+name: Deploy - dev
+
+# Development pipeline: deploys only the dev stack, using the dev artifact
+# bucket and the dev roles created by `sam pipeline bootstrap --stage dev`.
+on:
+  push:
+    branches:
+      - develop
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  id-token: write # required for GitHub OIDC
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  SAM_TEMPLATE: template.yaml
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  PIPELINE_EXECUTION_ROLE: ${{ vars.DEV_PIPELINE_EXECUTION_ROLE }}
+  CLOUDFORMATION_EXECUTION_ROLE: ${{ vars.DEV_CLOUDFORMATION_EXECUTION_ROLE }}
+  ARTIFACTS_BUCKET: ${{ vars.DEV_ARTIFACTS_BUCKET }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+      - name: Validate and lint template
+        run: sam validate --lint --template ${SAM_TEMPLATE} --region ${AWS_REGION}
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Build
+        run: sam build --template ${SAM_TEMPLATE}
+
+      - name: Assume dev pipeline execution role (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
+          role-session-name: dev-deployment
+          role-duration-seconds: 3600
+
+      - name: Deploy to dev
+        run: |
+          sam deploy \
+            --config-env dev \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --s3-bucket ${ARTIFACTS_BUCKET} \
+            --s3-prefix books-catalog-dev \
+            --role-arn ${CLOUDFORMATION_EXECUTION_ROLE} \
+            --region ${AWS_REGION}
+
+      - name: Show stack outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name books-catalog-dev \
+            --query "Stacks[0].Outputs" --output table

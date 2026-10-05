@@ -1,0 +1,76 @@
+name: Deploy - prod
+
+# Production pipeline: deploys only the prod stack, using the prod artifact
+# bucket and the prod roles created by `sam pipeline bootstrap --stage prod`.
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  id-token: write # required for GitHub OIDC
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  SAM_TEMPLATE: template.yaml
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  PIPELINE_EXECUTION_ROLE: ${{ vars.PROD_PIPELINE_EXECUTION_ROLE }}
+  CLOUDFORMATION_EXECUTION_ROLE: ${{ vars.PROD_CLOUDFORMATION_EXECUTION_ROLE }}
+  ARTIFACTS_BUCKET: ${{ vars.PROD_ARTIFACTS_BUCKET }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+      - name: Validate and lint template
+        run: sam validate --lint --template ${SAM_TEMPLATE} --region ${AWS_REGION}
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    # No `environment:` key on purpose: it would change the OIDC "sub" claim to
+    # repo:<org>/<repo>:environment:<name>, which the bootstrap role does not trust.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Build
+        run: sam build --template ${SAM_TEMPLATE}
+
+      - name: Assume prod pipeline execution role (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
+          role-session-name: prod-deployment
+          role-duration-seconds: 3600
+
+      - name: Deploy to prod
+        run: |
+          sam deploy \
+            --config-env prod \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --s3-bucket ${ARTIFACTS_BUCKET} \
+            --s3-prefix books-catalog-prod \
+            --role-arn ${CLOUDFORMATION_EXECUTION_ROLE} \
+            --region ${AWS_REGION}
+
+      - name: Show stack outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name books-catalog-prod \
+            --query "Stacks[0].Outputs" --output table

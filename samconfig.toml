@@ -1,0 +1,28 @@
+version = 0.1
+
+# Shared defaults
+[default.global.parameters]
+region = "eu-west-1"
+
+[default.validate.parameters]
+lint = true
+
+# ---------- Development ----------
+[dev.deploy.parameters]
+stack_name = "books-catalog-dev"
+region = "eu-west-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Environment=dev"
+confirm_changeset = false
+fail_on_empty_changeset = false
+tags = "Project=books-catalog Environment=dev"
+
+# ---------- Production ----------
+[prod.deploy.parameters]
+stack_name = "books-catalog-prod"
+region = "eu-west-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Environment=prod"
+confirm_changeset = false
+fail_on_empty_changeset = false
+tags = "Project=books-catalog Environment=prod"
