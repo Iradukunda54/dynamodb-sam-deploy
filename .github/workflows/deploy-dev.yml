@@ -38,6 +38,8 @@ jobs:
 
   deploy:
     needs: validate
+    # Skipped (not failed) until the dev bootstrap outputs are set as repository variables.
+    if: ${{ vars.DEV_PIPELINE_EXECUTION_ROLE != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

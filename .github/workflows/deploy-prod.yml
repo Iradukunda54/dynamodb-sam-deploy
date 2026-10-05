@@ -38,6 +38,8 @@ jobs:
 
   deploy:
     needs: validate
+    # Skipped (not failed) until the prod bootstrap outputs are set as repository variables.
+    if: ${{ vars.PROD_PIPELINE_EXECUTION_ROLE != '' }}
     runs-on: ubuntu-latest
     # No `environment:` key on purpose: it would change the OIDC "sub" claim to
     # repo:<org>/<repo>:environment:<name>, which the bootstrap role does not trust.
